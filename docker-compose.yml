@@ -1,0 +1,58 @@
+services:
+  opensearch:
+    # Fixe a versão: "latest" pode mudar o comportamento do índice sem aviso.
+    image: opensearchproject/opensearch:2.19.1
+    container_name: bacen-opensearch
+    environment:
+      # Um único nó, sem cluster: suficiente para desenvolvimento local.
+      - discovery.type=single-node
+      - cluster.name=bacen-cluster
+      - node.name=bacen-node-1
+      # Impede o SO de jogar a memória do OpenSearch para o swap.
+      - bootstrap.memory_lock=true
+      # Heap da JVM: Xms e Xmx iguais evitam redimensionamento em execução.
+      - OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g
+      # Só para uso local: sem TLS nem login, acesso via http://localhost:9200.
+      # Na AWS (OpenSearch Service) a segurança é gerenciada pelo serviço.
+      - DISABLE_SECURITY_PLUGIN=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+    ulimits:
+      # Necessário para o bootstrap.memory_lock funcionar.
+      memlock:
+        soft: -1
+        hard: -1
+      # O Lucene abre muitos arquivos de segmento ao mesmo tempo.
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      # Volume nomeado: o índice sobrevive a "docker compose down".
+      # Use "docker compose down -v" para apagar e reindexar do zero.
+      - opensearch-data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200" # API REST (é aqui que o Python conecta)
+      - "9600:9600" # Performance Analyzer (métricas)
+    healthcheck:
+      # Verde ou amarelo é saudável; amarelo é normal com um nó só (réplicas sem onde ficar).
+      test: ["CMD-SHELL", "curl -fs 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+  opensearch-dashboards:
+    # Interface web para inspecionar índices e testar consultas (Dev Tools).
+    image: opensearchproject/opensearch-dashboards:2.19.1
+    container_name: bacen-opensearch-dashboards
+    environment:
+      # Dentro da rede do Compose, o host é o nome do serviço, não localhost.
+      - OPENSEARCH_HOSTS=["http://opensearch:9200"]
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+    ports:
+      - "5601:5601"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+
+volumes:
+  opensearch-data:
