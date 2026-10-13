@@ -96,7 +96,18 @@ def remove_html_tags(raw_text: str) -> str:
     text = "\n".join(line.strip() for line in text.split("\n"))
     text = re.sub(r"\n\s*\n+", "\n\n", text)
     
-    return text.strip()
+    return clean_dots(text.strip())
+
+DOTS = re.compile(r"[ \t]*\.{5,}[ \t]*")
+
+def clean_dots(text: str) -> str:
+    lines: list[str] = []
+    for line in DOTS.sub(" [...] ", text).split("\n"):
+        line = line.strip()
+        if line == "[...]" and lines and lines[-1].endswith("[...]"):
+            continue
+        lines.append(line)
+    return "\n".join(lines)
 
 def parse(raw_dir: Path, out_path: Path) -> None:
     files = read_files(raw_dir)

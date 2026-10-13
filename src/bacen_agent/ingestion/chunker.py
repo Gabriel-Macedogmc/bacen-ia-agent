@@ -1,15 +1,13 @@
-import collections
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
 import re
 
-from mypy.nodes import Block
 from pydantic import BaseModel
 
 from bacen_agent.ingestion.parser import Norma
 
-ART = re.compile(r"^Art\. ?(\d+[º°]?(?:-[A-Z]+)?)")
+ART = re.compile(r"^Art\. ?(\d+)[º°]?(-[A-Z]+)?")
 PAR = re.compile(r"^(§ ?\d+|Parágrafo único)")
 
 @dataclass
@@ -44,7 +42,7 @@ def split_blocks(text: str) -> list[Block]:
        
         if match:
             blocks.append(current)
-            current = Block(article=match.group(1).replace("º", "").replace("º", ""))
+            current = Block(article=match.group(1) + (match.group(2) or ""))
        
         current.lines.append(line)
         
@@ -52,11 +50,31 @@ def split_blocks(text: str) -> list[Block]:
     return [b for b in blocks if b.text]
 
 def split_long(block: Block, max_chars: int) -> list[str]:
-    max_chars_valid = sum(len(line) for line in block.lines) <= max_chars
+    if len(block.text) <= max_chars:
+        return [block.text]
     
-    if max_chars_valid:
-         
-
+    parts: list[str] = []
+    current: list[str] = []
+    
+    for line in block.lines:
+        if PAR.match(line):
+            parts.append("\n".join(current).strip())
+            current = []
+        current.append(line)
+    
+    parts.append("\n".join(current).strip())
+    
+    chunks: list[str] = []
+    
+    for part in parts:
+        if len(part) <= max_chars:
+            chunks.append(part)
+        else:
+            print(f"Parte do Texto {part}")
+            chunks.append(part)
+    
+    return chunks
+    
 def split_by_size(text: str, max_chars: int) -> list[str]: ...  
 
 def chunk_norma(norma: Norma) -> list[Chunk]: ...
@@ -64,7 +82,10 @@ def chunk_norma(norma: Norma) -> list[Chunk]: ...
 def chunk_all(in_path: Path, out_path: Path) -> None:
     for l in Path(in_path).read_text(encoding="utf-8").splitlines():
             data = Norma.model_validate(json.loads(l))
-            splitedBlocks = split_blocks(data.text)
-            print(splitedBlocks[1])
+            
+            for block in split_blocks(data.text):
+                for text in split_long(block, 1500):
+                    text            
+            
 
 chunk_all(Path("data/interim/normas.jsonl") , Path("data/processed/chunks.jsonl"))
