@@ -102,11 +102,15 @@ DOTS = re.compile(r"[ \t]*\.{5,}[ \t]*")
 
 def clean_dots(text: str) -> str:
     lines: list[str] = []
+    
     for line in DOTS.sub(" [...] ", text).split("\n"):
         line = line.strip()
+        
         if line == "[...]" and lines and lines[-1].endswith("[...]"):
             continue
+        
         lines.append(line)
+    
     return "\n".join(lines)
 
 def parse(raw_dir: Path, out_path: Path) -> None:
