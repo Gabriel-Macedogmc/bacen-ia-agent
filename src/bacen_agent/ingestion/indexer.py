@@ -51,7 +51,7 @@ class Indexer:
             }
             self.client.indices.create(index=self.index_name, body=index_body)
             
-            logger.info("KNN Index %d Created - Dimensions Vector %f", self.index_name, dimension)
+            logger.info("KNN Index %s Created - Dimensions Vector %d", self.index_name, dimension)
             
     def build_actions(self,batchs: Iterable[list[Chunk]]) -> Iterator[dict]:
         embedded = 0
