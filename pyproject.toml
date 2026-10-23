@@ -11,7 +11,9 @@ dependencies = [
     "pydantic-settings>=2.3", # ler configurações do .env
     "beautifulsoup4>=4.12",   # HTML → texto (parser)
     "lxml>=5.0",              # parser HTML rápido usado pelo BeautifulSoup
-    "sentence-transformers"
+    "sentence-transformers",
+    "anthropic",
+    "openai"
 ]
 
 [project.optional-dependencies]

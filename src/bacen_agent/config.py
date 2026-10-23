@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     embedding_dimension: int = 1024
     hf_access_token: str
     
+    #LLM
+    llm_model: str = "claude-haiku-5-5"
+    llm_effort: str = "medium"
+    anthropic_key: str
+    llm_input_price: float = 0.10    # US$ por milhão de tokens (Haiku 5.5)
+    llm_output_price: float = 0.50
+    
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
