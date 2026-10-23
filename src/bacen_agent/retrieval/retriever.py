@@ -17,6 +17,8 @@ class SearchResult(BaseModel):
     part: str
     title: str
     text: str
+    date: str
+    norma_id: int
     score: float
     
 class Retriever:
