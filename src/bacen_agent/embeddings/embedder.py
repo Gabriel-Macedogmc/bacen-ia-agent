@@ -15,8 +15,10 @@ class EmbedderModel:
         self.model = SentenceTransformer(
             settings.embedding_model,
             device=self.device,
-            model_kwargs={"torch_dtype": torch.float16} if self.device == "mps" else {},
+            model_kwargs={"torch_dtype": torch.float16} if self.device == "mps" else {}
         )
+        
+        self.model.max_seq_length = 512
 
     @torch.inference_mode()
     def encode(self, documents: list[str], batch_size: int = 16) -> list[list[float]]:

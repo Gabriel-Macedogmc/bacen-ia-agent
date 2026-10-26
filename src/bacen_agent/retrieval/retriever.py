@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from opensearchpy import OpenSearch
 from pydantic import BaseModel
 
@@ -36,7 +38,12 @@ class Retriever:
             "_source": {"excludes": ["embedding"]},
             "query": {
                 "bool": {
-                    "must": [{"match": {"text": query}}],
+                    "must": [
+                        {"multi_match": {
+                            "query": query,
+                            "fields": ["text", "context", "title"]
+                        }}
+                    ],
                     "filter": filters,
                 }
             },
@@ -80,7 +87,21 @@ class Retriever:
         hits = response['hits']['hits']
                         
         return [SearchResult(**hit["_source"], score=hit["_score"]) for hit in hits]
+    
+    def search_hybrid(self, query: str, k: int = 5, candidates: int = 50, rrf_k: int = 60, only_active: bool = True) -> list[SearchResult]:
+        bm25 = self.search_bm25(query, k=candidates, only_active=only_active)
+        knn = self.search_knn(query, k=candidates, only_active=only_active)
         
+        response: list[SearchResult] = []
+        scores = defaultdict(float)
+        docs = [str, SearchResult]
+        
+        for results in (bm25, knn):
+            for rank, result in enumerate(results, start=1):
+                scores[result.chunk_id] += sum(1 / (rrf_k + rank))
+                docs[result.chunk_id] = 
+
+        return sorted(results, key=scores.get, reverse=True)[:k]
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
@@ -89,7 +110,7 @@ if __name__ == "__main__":
     settings = get_settings()
     retriever = Retriever(make_client(settings), EmbedderModel(settings), settings.index_name)
     
-    response = retriever.search_knn(query="Qual a taxa Selic atual?", k=10)
+    response = retriever.search_hybrid(query="Qual a taxa Selic atual?", k=10)
     logger.info("Results: %s", response)
 
     #print(EmbedderModel(settings).encode(documents=["O que acontece com um banco que descumpre as regras do Pix?"])[0])
