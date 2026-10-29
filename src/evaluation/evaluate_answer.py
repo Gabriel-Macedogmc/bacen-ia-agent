@@ -9,6 +9,7 @@ from bacen_agent.llm.anthropic import AnthropicProvider
 from bacen_agent.opensearch import make_client
 from bacen_agent.rag.pipeline import RagPipeline
 from bacen_agent.rag.prompts import PROMPT_VERSION
+from bacen_agent.retrieval.reranker import Reranker
 from bacen_agent.retrieval.retriever import Retriever
 from evaluation.common import Question, git_commit, load_questions, matches, save_run
 
@@ -113,7 +114,7 @@ def summarize(results: list[AnswerResult], settings: Settings, k: int = 5) -> An
 
 if __name__ == "__main__":
     settings = get_settings()
-    retriever = Retriever(make_client(settings), EmbedderModel(settings), settings.index_name)
+    retriever = Retriever(make_client(settings), EmbedderModel(settings), settings.index_name, Reranker(settings))
     provider = AnthropicProvider(settings)
     
     ragPipeline = RagPipeline(retriever, provider)
@@ -122,6 +123,6 @@ if __name__ == "__main__":
     
     results = evaluate(pipeline=ragPipeline, questions=questions)
     
-    save_run(summarize(results, settings, ragPipeline.k), results, Path("data/eval/results"), "answers_history.jsonl" )
+    save_run(summarize(results, settings, k=ragPipeline.k), results, Path("data/eval/results"), "answers_history.jsonl" )
     
         

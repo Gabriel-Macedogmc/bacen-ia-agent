@@ -7,7 +7,9 @@ from pydantic import BaseModel
 from bacen_agent.config import Settings, get_settings
 from bacen_agent.embeddings.embedder import EmbedderModel
 from bacen_agent.opensearch import make_client
-from bacen_agent.retrieval.retriever import Retriever, SearchResult
+from bacen_agent.retrieval.reranker import Reranker
+from bacen_agent.retrieval.retriever import Retriever
+from bacen_agent.retrieval.schemas import SearchResult
 from evaluation.common import Expected, Question, QuestionResult, git_commit, load_questions, matches, save_run
 
 SearchFn = Callable[[str, int], list[SearchResult]]
@@ -95,11 +97,11 @@ def evaluate(search: SearchFn, questions: list[Question], k: int = 100) -> list[
 
 if __name__ == "__main__":
     settings = get_settings()
-    retriever = Retriever(make_client(settings), EmbedderModel(settings), settings.index_name)
+    retriever = Retriever(make_client(settings), EmbedderModel(settings), settings.index_name, reranker=Reranker(settings))
     questions = load_questions(Path("data/eval/questions.jsonl"))
 
     print_header()
-    for name, search in {"bm25": retriever.search_bm25, "knn": retriever.search_knn}.items():
+    for name, search in {"bm25": retriever.search_bm25, "knn": retriever.search_knn, "hybrid": retriever.search_hybrid, f"rerank_c{settings.reranker_candidates}": retriever.search_rerank}.items():
         results = evaluate(search, questions)
         report(name, results)
         save_run(summarize(name, results, settings), results, Path("data/eval/results"), "retrieval_history.jsonl")
