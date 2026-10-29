@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from opensearchpy import OpenSearch
 from pydantic import BaseModel
 
@@ -6,27 +8,19 @@ from bacen_agent.embeddings.embedder import EmbedderModel
 import logging
 
 from bacen_agent.opensearch import make_client
+from bacen_agent.retrieval.reranker import Reranker
+from bacen_agent.retrieval.schemas import SearchResult
 
 logger = logging.getLogger(__name__) 
 
-class SearchResult(BaseModel):
-    chunk_id: str
-    type: str
-    number: int
-    article: str | None
-    part: str
-    title: str
-    text: str
-    date: str
-    norma_id: int
-    score: float
-    
+
 class Retriever:
-    def __init__(self, client: OpenSearch, embedder: EmbedderModel, index_name: str):
+    def __init__(self, client: OpenSearch, embedder: EmbedderModel, index_name: str, reranker: Reranker | None = None):
         self.client = client
         self.embedder = embedder
         self.index_name = index_name
-    
+        self.reranker = reranker
+        
     def search_bm25(self, query: str, k: int = 5, only_active: bool = True) -> list[SearchResult]:
 
         filters = [{"term": {"repealed": False}}] if only_active else []
@@ -36,7 +30,14 @@ class Retriever:
             "_source": {"excludes": ["embedding"]},
             "query": {
                 "bool": {
-                    "must": [{"match": {"text": query}}],
+                    "must": [
+                        {
+                            "multi_match": {
+                                "query": query,
+                                "fields": ["context", "text"]
+                            }
+                        }
+                    ],
                     "filter": filters,
                 }
             },
@@ -80,7 +81,43 @@ class Retriever:
         hits = response['hits']['hits']
                         
         return [SearchResult(**hit["_source"], score=hit["_score"]) for hit in hits]
+
+    def search_hybrid(self, query: str, k: int = 5, candidates: int = 50, rrf_k: int = 60, only_active: bool = True, bm25_weight: float = 0, knn_weight: float = 1.0) -> list[SearchResult]:
+        bm25 = self.search_bm25(query, k=candidates, only_active=only_active)
+        knn = self.search_knn(query, k=candidates, only_active=only_active)
         
+        scores: dict[str, float] = defaultdict(float)
+        docs: dict[str, SearchResult] = {}
+        
+        for results, weight in (bm25, bm25_weight), (knn, knn_weight):
+            for rank, result in enumerate(results, start=1):
+                scores[result.chunk_id] += weight / (rrf_k + rank)
+                docs.setdefault(result.chunk_id, result)
+        
+        ranked = sorted(scores, key=scores.get, reverse=True)[:k]
+
+        return [docs[cid].model_copy(update={"score": scores[cid]}) for cid in ranked]
+    
+    def search_rerank(self, query: str, k: int = 5, candidates: int = 50, only_active: bool = True) -> list[SearchResult]:
+        if self.reranker is None:
+            raise ValueError("search_rerank precisa de um Reranker no construtor do Retriever")
+        
+        knn = self.search_knn(query, candidates, only_active)
+        
+        rerank = self.reranker.rerank(query, knn, k)
+        
+        scores: dict[str, float] = defaultdict(float)
+        docs: dict[str, SearchResult] = {}
+                
+        for results in (knn, rerank):
+            for rank, result in enumerate(results, start=1):
+                scores[result.chunk_id] += 1 / (60 + rank)
+                docs.setdefault(result.chunk_id, result)
+                
+        ranked = sorted(scores, key=scores.get, reverse=True)[:k]
+        
+        return [docs[cid].model_copy(update={"score": scores[cid]}) for cid in ranked]
+    
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,

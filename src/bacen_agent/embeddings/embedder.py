@@ -2,21 +2,19 @@ import torch
 from sentence_transformers import SentenceTransformer
 
 from bacen_agent.config import Settings
+from bacen_agent.device import device
 
 class EmbedderModel:
     def __init__(self, settings: Settings):
-        if torch.cuda.is_available():
-            self.device = "cuda"
-        elif torch.backends.mps.is_available():
-            self.device = "mps"
-        else:
-            self.device = "cpu"
+        self.device = device()
 
         self.model = SentenceTransformer(
             settings.embedding_model,
             device=self.device,
             model_kwargs={"torch_dtype": torch.float16} if self.device == "mps" else {},
         )
+        
+        self.model.max_seq_length = 512
 
     @torch.inference_mode()
     def encode(self, documents: list[str], batch_size: int = 16) -> list[list[float]]:

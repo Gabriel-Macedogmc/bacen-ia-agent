@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     llm_input_price: float = 0.10    # US$ por milhão de tokens (Haiku 5.5)
     llm_output_price: float = 0.50
     
+    #Cross-Enconder
+    reranker_model: str = "BAAI/bge-reranker-v2-m3"
+    reranker_candidates: int = 50
+    
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
