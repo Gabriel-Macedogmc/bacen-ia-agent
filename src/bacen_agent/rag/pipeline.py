@@ -37,7 +37,7 @@ class RagPipeline:
         self.k = k    
     
     def answer(self, question: str) -> RagResponse:
-        chunks = self.retriever.search_knn(question, self.k)
+        chunks = self.retriever.search_rerank(question, self.k)
         answer, usage = self.llm.generate(SYSTEM_PROMPT, build_user_message(question, chunks), Answer)
         
         retrieved_ids = [c.chunk_id for c in chunks]
