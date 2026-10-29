@@ -126,7 +126,7 @@ if __name__ == "__main__":
     settings = get_settings()
     retriever = Retriever(make_client(settings), EmbedderModel(settings), settings.index_name)
     
-    response = retriever.search_knn(query="Qual a taxa Selic atual?", k=10)
+    response = retriever.search_hybrid(query="Qual a taxa Selic atual?", k=10)
     logger.info("Results: %s", response)
 
     #print(EmbedderModel(settings).encode(documents=["O que acontece com um banco que descumpre as regras do Pix?"])[0])
