@@ -12,3 +12,4 @@ class SearchResult(BaseModel):
     norma_id: int
     score: float
     context: str
+    retrieval_method: str | None = None

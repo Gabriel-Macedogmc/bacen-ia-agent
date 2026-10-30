@@ -27,6 +27,15 @@ class Settings(BaseSettings):
     #Cross-Enconder
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
     reranker_candidates: int = 50
+    retrieval_method: str = "rerank_rrf_c50"
+    hybrid_bm25_weight: float = 0.25
+    
+    #Langfuse
+    langfuse_secret_key: str
+    langfuse_public_key: str
+    langfuse_base_url: str = "http://localhost:3000"
+    
+    max_rewrites: int = 1
     
 @lru_cache
 def get_settings() -> Settings:

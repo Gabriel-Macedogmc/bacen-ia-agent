@@ -13,7 +13,9 @@ dependencies = [
     "lxml>=5.0",              # parser HTML rápido usado pelo BeautifulSoup
     "sentence-transformers",
     "anthropic",
-    "openai"
+    "openai",
+    "langgraph",
+    "langfuse"
 ]
 
 [project.optional-dependencies]

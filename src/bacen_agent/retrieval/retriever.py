@@ -1,18 +1,21 @@
 from collections import defaultdict
+from functools import partial
+from typing import Callable
 
+from langfuse import observe
 from opensearchpy import OpenSearch
 from pydantic import BaseModel
 
-from bacen_agent.config import get_settings
+from bacen_agent.config import Settings, get_settings
 from bacen_agent.embeddings.embedder import EmbedderModel
 import logging
 
+from bacen_agent.observability import make_langfuse
 from bacen_agent.opensearch import make_client
 from bacen_agent.retrieval.reranker import Reranker
 from bacen_agent.retrieval.schemas import SearchResult
 
 logger = logging.getLogger(__name__) 
-
 
 class Retriever:
     def __init__(self, client: OpenSearch, embedder: EmbedderModel, index_name: str, reranker: Reranker | None = None):
@@ -98,13 +101,25 @@ class Retriever:
 
         return [docs[cid].model_copy(update={"score": scores[cid]}) for cid in ranked]
     
+    @observe(as_type="retriever")
     def search_rerank(self, query: str, k: int = 5, candidates: int = 50, only_active: bool = True) -> list[SearchResult]:
         if self.reranker is None:
             raise ValueError("search_rerank precisa de um Reranker no construtor do Retriever")
+            
+        knn = self.search_knn(query, candidates, only_active)
+            
+        rerank = self.reranker.rerank(query, knn, len(knn))
+            
+        return rerank[:k]
+    
+    @observe(as_type="retriever")
+    def search_rerank_with_rrf(self, query: str, k: int = 5, candidates: int = 50, only_active: bool = True) -> list[SearchResult]:
+        if self.reranker is None:
+            raise ValueError("search_rerank_rrf precisa de um Reranker no construtor do Retriever")
         
         knn = self.search_knn(query, candidates, only_active)
         
-        rerank = self.reranker.rerank(query, knn, k)
+        rerank = self.reranker.rerank(query, knn, len(knn))
         
         scores: dict[str, float] = defaultdict(float)
         docs: dict[str, SearchResult] = {}
@@ -117,13 +132,31 @@ class Retriever:
         ranked = sorted(scores, key=scores.get, reverse=True)[:k]
         
         return [docs[cid].model_copy(update={"score": scores[cid]}) for cid in ranked]
-    
+
+SearchFn = Callable[[str, int], list[SearchResult]]
+
+def search_methods(retriever: Retriever, settings: Settings) -> dict[str, SearchFn]:
+    c = settings.reranker_candidates
+    w = settings.hybrid_bm25_weight          # 0.25
+
+    methods: dict[str, SearchFn] = {
+        "bm25": retriever.search_bm25,
+        "knn": retriever.search_knn,
+        f"hybrid_w{w}_c{c}": partial(retriever.search_hybrid, candidates=c, bm25_weight=w),
+    }
+    if retriever.reranker is not None:
+        methods[f"rerank_rrf_c{c}"] = partial(retriever.search_rerank_with_rrf, candidates=c)
+        methods[f"rerank_c{c}"] = partial(retriever.search_rerank, candidates=c)
+        
+    return methods
+
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     settings = get_settings()
+    make_langfuse(settings)
     retriever = Retriever(make_client(settings), EmbedderModel(settings), settings.index_name)
     
     response = retriever.search_hybrid(query="Qual a taxa Selic atual?", k=10)
