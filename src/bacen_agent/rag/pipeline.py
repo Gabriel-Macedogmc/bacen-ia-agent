@@ -21,16 +21,27 @@ class RagResponse(BaseModel):
     retrieved: list[SearchResult]
     input_tokens: int
     output_tokens: int
+    attempts: int | None = None
+    queries: list[str] | None = None
+    tools_called: list[str] | None = None
+    reason: str | None = None
     
     @classmethod
-    def not_found(cls, retrieved: list[SearchResult], usage: LLMUsage) -> "RagResponse":
+    def not_found(cls, retrieved: list[SearchResult], usage: LLMUsage, 
+            attempts: int | None = 0, query: list[str] | None = None, tools_called: list[str] | None = None,
+            reason: str | None = None
+        ) -> "RagResponse":
         return cls(
             found=False,
             answer=NOT_FOUND_MESSAGE,
             sources=[],
             retrieved=retrieved,
             input_tokens=usage.input_tokens,
-            output_tokens=usage.output_tokens
+            output_tokens=usage.output_tokens,
+            attempts=attempts,
+            queries=query,
+            tools_called=tools_called,
+            reason=reason
         )
     
 class RagPipeline:
@@ -62,6 +73,8 @@ class RagPipeline:
             answer=answer.answer,
             input_tokens=usage.input_tokens,
             output_tokens=usage.output_tokens,
+            attempts=0,
+            queries=[]
         )
 
 if __name__ == "__main__":

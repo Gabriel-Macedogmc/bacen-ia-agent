@@ -15,7 +15,9 @@ dependencies = [
     "anthropic",
     "openai",
     "langgraph",
-    "langfuse"
+    "langfuse",
+    "langchain-anthropic",
+    "langchain"
 ]
 
 [project.optional-dependencies]

@@ -1,0 +1,37 @@
+{
+  "data_referencia": "2026-11-03T22:30:00-03:00",
+  "titular": {
+    "nome": "Maria Exemplo",
+    "tipo": "pessoa_fisica",
+    "cpf": "191.532.780-62"
+  },
+  "saldo": {
+    "disponivel": 4250.75,
+    "bloqueado": 500.00
+  },
+  "limites": {
+    "pix_pf_diurno": 5000.00,
+    "pix_pf_noturno": 1000.00,
+    "periodo_noturno": "20h-6h",
+    "usado_hoje_diurno": 0.00,
+    "usado_hoje_noturno": 300.00
+  },
+  "chaves": [
+    {"tipo": "cpf", "valor": "191.532.780-62"},
+    {"tipo": "email", "valor": "maria.exemplo@example.com"},
+    {"tipo": "aleatoria", "valor": "7f3c2a9e-1b4d-4e8a-9c21-5d6f8a0b3e47"}
+  ],
+  "transacoes": [
+    {"id": "T1", "data": "2026-11-01T14:05:00-03:00", "tipo": "enviado", "valor": 189.90, "contraparte": "Mercado Exemplo", "finalidade": "compra", "status": "liquidado"},
+    {"id": "T2", "data": "2026-11-02T11:40:00-03:00", "tipo": "enviado", "valor": 1200.00, "contraparte": "João Exemplo", "finalidade": "transferencia", "status": "liquidado"},
+    {"id": "T3", "data": "2026-11-02T08:00:00-03:00", "tipo": "recebido", "valor": 3500.00, "contraparte": "Empresa Exemplo Ltda", "finalidade": "transferencia", "status": "liquidado"},
+    {"id": "T4", "data": "2026-11-03T10:20:00-03:00", "tipo": "recebido", "valor": 500.00, "contraparte": "Carlos Exemplo", "finalidade": "transferencia", "status": "bloqueio_cautelar"},
+    {"id": "T5", "data": "2026-11-03T21:15:00-03:00", "tipo": "enviado", "valor": 300.00, "contraparte": "Ana Exemplo", "finalidade": "transferencia", "status": "liquidado"}
+  ],
+  "saques_troco_mes": 6,
+  "consentimentos_open_finance": [
+    {"instituicao": "Banco Alfa Exemplo", "dados": ["cadastro", "contas"], "status": "ativo", "expira_em": "2027-03-10"},
+    {"instituicao": "Corretora Beta Exemplo", "dados": ["investimentos"], "status": "ativo", "expira_em": "2027-01-22"},
+    {"instituicao": "Financeira Gama Exemplo", "dados": ["cartao_credito"], "status": "revogado", "expira_em": null}
+  ]
+}

@@ -26,6 +26,11 @@ class Question(BaseModel):
     style: str
     author: str
     notes: Optional[str] = None
+    expected_tools: list[str] = []
+    expected_results: float | str | list[str] | None = None
+    task: str
+    optional_tools: list[str] = []
+    expected_args: dict[str, dict[str, str]] = {}
 
 def git_commit() -> str:
     try:
