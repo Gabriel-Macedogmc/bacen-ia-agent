@@ -6,4 +6,4 @@ class Answer(BaseModel):
     citations: list[str] = Field(description="ids dos trechos usados na resposta")
     
 class Rewrite(BaseModel): 
-    query: str
+    query: str = Field(description="Query reescrita para o motor de busca, ou vazia se não houver reescrita")

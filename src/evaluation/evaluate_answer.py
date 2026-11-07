@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 from pathlib import Path
-import uuid
+import time
 
-from langfuse import get_client, observe, propagate_attributes
+from langfuse import get_client, propagate_attributes
 from pydantic import BaseModel
 
 from bacen_agent.agent.graph import Answerer, RagGraph
@@ -29,6 +29,9 @@ class AnswerResult(BaseModel):
     citations: list[str]
     input_tokens: int
     output_tokens: int
+    attempts: int | None = None
+    queries: list[str] | None = None
+    latency_s: float | None = None
 
 class AnswerRunSummary(BaseModel):
     run_id: str
@@ -53,6 +56,8 @@ class AnswerRunSummary(BaseModel):
     wrong_answers_off: list[int]
     retrieval_method: str
     runner: str
+    max_latency_s: float | None = None
+    mean_latency_s: float | None = None
     
 def response_rate(results: list[AnswerResult]) -> float:
     return sum(r.found for r in results) / len(results) if results else 0.0
@@ -78,27 +83,35 @@ def evaluate(pipeline: Answerer, questions: list[Question], now: datetime) -> li
     ):
         langfuse = get_client()
         for q in questions:
-            with langfuse.start_as_current_observation(
-                name=f"q{q.id:02d}-{q.scope}", as_type="span",
-                input=q.question, metadata={"id": q.id, "scope": q.scope, "style": q.style},
-            ):
-                result = pipeline.answer(q.question)
-                answer = AnswerResult(
-                    answer=result.answer,
-                    scope=q.scope,
-                    retrieval_hit=any(matches(r, e) for r in result.retrieved for e in q.expected),
-                    citation_hit=any(matches(r, e) for r in result.sources for e in q.expected),
-                    found=result.found,
-                    citations=[s.chunk_id for s in result.sources],
-                    style=q.style,
-                    id=q.id,
-                    output_tokens=result.output_tokens,
-                    input_tokens=result.input_tokens,
-                )
-                langfuse.score_current_trace(name="citation_hit", value=float(answer.citation_hit))
-                langfuse.score_current_trace(name="retrieval_hit", value=float(answer.retrieval_hit))
-                langfuse.score_current_trace(name="found", value=float(answer.found))
-                answer_result.append(answer)
+            if q.task == "norma":
+                with langfuse.start_as_current_observation(
+                    name=f"q{q.id:02d}-{q.scope}", as_type="span",
+                    input=q.question, metadata={"id": q.id, "scope": q.scope, "style": q.style},
+                ):
+                    start = time.perf_counter()
+                    result = pipeline.answer(q.question)
+                    latency = time.perf_counter() - start
+                    langfuse.score_current_trace(name="latency", value=latency)
+                
+                    answer = AnswerResult(
+                        answer=result.answer,
+                        scope=q.scope,
+                        retrieval_hit=any(matches(r, e) for r in result.retrieved for e in q.expected),
+                        citation_hit=any(matches(r, e) for r in result.sources for e in q.expected),
+                        found=result.found,
+                        citations=[s.chunk_id for s in result.sources],
+                        style=q.style,
+                        id=q.id,
+                        output_tokens=result.output_tokens,
+                        input_tokens=result.input_tokens,
+                        attempts=result.attempts,
+                        queries=result.queries,
+                        latency_s=latency
+                    )
+                    langfuse.score_current_trace(name="citation_hit", value=float(answer.citation_hit))
+                    langfuse.score_current_trace(name="retrieval_hit", value=float(answer.retrieval_hit))
+                    langfuse.score_current_trace(name="found", value=float(answer.found))
+                    answer_result.append(answer)
 
     return answer_result
 
@@ -131,7 +144,9 @@ def summarize(results: list[AnswerResult], settings: Settings, pipeline: Answere
         abstention_rate=abstention_rate(off_scope),
         wrong_citations=[r.id for r in in_scope if r.retrieval_hit and not r.citation_hit],
         wrong_answers_off=[r.id for r in off_scope if r.found],
-        runner=pipeline.runner
+        runner=pipeline.runner,
+        max_latency_s=max((r.latency_s for r in results if r.latency_s is not None), default=None),
+        mean_latency_s=sum((r.latency_s for r in results if r.latency_s is not None), 0.0) / sum((1 for r in results if r.latency_s is not None), 1)
     )
 
 if __name__ == "__main__":

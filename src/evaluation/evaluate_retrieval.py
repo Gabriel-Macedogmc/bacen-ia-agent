@@ -80,7 +80,7 @@ def evaluate(search: SearchFn, questions: list[Question], k: int = 100) -> list[
     response: list[QuestionResult] = []
     
     for q in questions:
-        if q.scope == "in":
+        if q.scope == "in" and q.task == "norma":
             search_result = search(q.question, k)
             position = first_hit(results=search_result, expected=q.expected)
             

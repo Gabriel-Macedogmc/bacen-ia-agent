@@ -46,7 +46,7 @@ class RagGraph:
         self.app = build_graph(agent, settings)
         self.k = agent.k
         self.retrieval_method = agent.retrieval_method
-        self.runner = "graph_v1"
+        self.runner = "graph_v2_rewrite"
         
     def answer(self, question: str) -> RagResponse:
         return self.app.invoke({"question": question, "query": question, "queries": [question]})["response"]
