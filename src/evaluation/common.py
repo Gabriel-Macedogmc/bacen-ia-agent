@@ -27,7 +27,7 @@ class Question(BaseModel):
     author: str
     notes: Optional[str] = None
     expected_tools: list[str] = []
-    expected_results: float | str | list[str] | None = None
+    expected_result: float | str | list[str] | None = None
     task: str
     optional_tools: list[str] = []
     expected_args: dict[str, dict[str, str]] = {}
@@ -39,7 +39,7 @@ def git_commit() -> str:
         
         return f"{sha}{'-dirty' if dirty else ''}"
     except (subprocess.CalledProcessError, FileNotFoundError):
-        return 'unkown'
+        return 'unknown'
     
 def save_run(summary: BaseModel, results: Sequence[BaseModel], out_dir: Path, history: str) -> None:
     runs = out_dir / "runs"

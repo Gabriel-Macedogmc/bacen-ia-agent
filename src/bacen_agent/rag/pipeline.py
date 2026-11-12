@@ -25,6 +25,8 @@ class RagResponse(BaseModel):
     queries: list[str] | None = None
     tools_called: list[str] | None = None
     reason: str | None = None
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
     
     @classmethod
     def not_found(cls, retrieved: list[SearchResult], usage: LLMUsage, 
@@ -41,7 +43,9 @@ class RagResponse(BaseModel):
             attempts=attempts,
             queries=query,
             tools_called=tools_called,
-            reason=reason
+            reason=reason,
+            cache_read_tokens=usage.cache_read_tokens,
+            cache_creation_tokens=usage.cache_creation_tokens
         )
     
 class RagPipeline:

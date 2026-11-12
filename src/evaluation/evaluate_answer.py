@@ -1,3 +1,4 @@
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 import time
@@ -6,10 +7,12 @@ from langfuse import get_client, propagate_attributes
 from pydantic import BaseModel
 
 from bacen_agent.agent.graph import Answerer, RagGraph
-from bacen_agent.agent.nodes import RagAgent
+from bacen_agent.agent.nodes import RagAgent, ToolAgent
+from bacen_agent.agent.tool_graph import AgentGraph
 from bacen_agent.config import Settings, get_settings
 from bacen_agent.embeddings.embedder import EmbedderModel
 from bacen_agent.llm.anthropic import AnthropicProvider
+from bacen_agent.llm.chat_anthropic import ChatAnthropicProvider
 from bacen_agent.observability import make_langfuse
 from bacen_agent.opensearch import make_client
 from bacen_agent.rag.pipeline import RagPipeline
@@ -32,7 +35,13 @@ class AnswerResult(BaseModel):
     attempts: int | None = None
     queries: list[str] | None = None
     latency_s: float | None = None
-
+    task: str
+    tools_called: list[str] | None = None
+    reason: str | None = None
+    tool_selection_hit: bool | None = None
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    
 class AnswerRunSummary(BaseModel):
     run_id: str
     created_at: str
@@ -52,12 +61,18 @@ class AnswerRunSummary(BaseModel):
     citation_rate_when_retrieved: float
     retrieval_hit_rate: float
     abstention_rate: float
+    tool_selection_accuracy: float | None = None
+    mean_tool_calls: float | None = None
     wrong_citations: list[int]
     wrong_answers_off: list[int]
     retrieval_method: str
     runner: str
     max_latency_s: float | None = None
     mean_latency_s: float | None = None
+    reasons_in: dict[str, int] | None = None
+    reasons_off: dict[str, int] | None = None
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
     
 def response_rate(results: list[AnswerResult]) -> float:
     return sum(r.found for r in results) / len(results) if results else 0.0
@@ -73,17 +88,35 @@ def citation_rate_when_retrieved(results: list[AnswerResult]) -> float:
 def abstention_rate(results: list[AnswerResult]) -> float:
     return sum(not r.found for r in results) / len(results) if results else 0.0
 
+def tool_selection_hit(called: list[str], q: Question) -> bool:
+    called_set = set(called)
+    required = set(q.expected_tools)
+    allowed = required | set(q.optional_tools)
+    
+    return required <= called_set and called_set <= allowed
+
+def tool_selection_accuracy(results: list[AnswerResult]) -> float | None:
+    scored = [r for r in results if r.tool_selection_hit is not None]
+    return sum(r.tool_selection_hit for r in scored) / len(scored) if scored else None
+
+def mean_tool_calls(results: list[AnswerResult]) -> float | None:
+    scored = [r for r in results if r.tools_called is not None]
+    return sum(len(r.tools_called) for r in scored) / len(scored) if scored else None
+
+def reasons(results: list[AnswerResult]) -> dict[str, int] | None:
+    scored = [r.reason for r in results if r.reason is not None]
+    return dict(Counter(scored)) if scored else None
+
 def evaluate(pipeline: Answerer, questions: list[Question], now: datetime) -> list[AnswerResult]:
     answer_result: list[AnswerResult] = []
     
     with propagate_attributes(
     session_id=f"{now:%Y%m%d-%H%M%S}_answers",
-    tags=[PROMPT_VERSION, pipeline.retrieval_method],
-    metadata={"llm_model": settings.llm_model, "llm_effort": settings.llm_effort},
+    tags=[PROMPT_VERSION, pipeline.retrieval_method, pipeline.runner],
+    metadata={"llm_model": settings.llm_model, "llm_effort": settings.llm_effort, "runner": pipeline.runner, "git_commit": git_commit()},
     ):
         langfuse = get_client()
         for q in questions:
-            if q.task == "norma":
                 with langfuse.start_as_current_observation(
                     name=f"q{q.id:02d}-{q.scope}", as_type="span",
                     input=q.question, metadata={"id": q.id, "scope": q.scope, "style": q.style},
@@ -106,11 +139,19 @@ def evaluate(pipeline: Answerer, questions: list[Question], now: datetime) -> li
                         input_tokens=result.input_tokens,
                         attempts=result.attempts,
                         queries=result.queries,
-                        latency_s=latency
+                        latency_s=latency,
+                        task=q.task,
+                        tools_called=result.tools_called,
+                        reason=result.reason,
+                        tool_selection_hit=tool_selection_hit(result.tools_called, q) if result.tools_called is not None else None,
+                        cache_read_tokens=result.cache_read_tokens,
+                        cache_creation_tokens=result.cache_creation_tokens,
                     )
                     langfuse.score_current_trace(name="citation_hit", value=float(answer.citation_hit))
                     langfuse.score_current_trace(name="retrieval_hit", value=float(answer.retrieval_hit))
                     langfuse.score_current_trace(name="found", value=float(answer.found))
+                    if answer.tool_selection_hit is not None:
+                        langfuse.score_current_trace(name="tool_selection_hit", value=float(answer.tool_selection_hit))
                     answer_result.append(answer)
 
     return answer_result
@@ -122,6 +163,15 @@ def summarize(results: list[AnswerResult], settings: Settings, pipeline: Answere
     input_tokens = sum(r.input_tokens for r in results)
     output_tokens = sum(r.output_tokens for r in results)
     
+    cache_read = sum(r.cache_read_tokens for r in results)
+    cache_creation = sum(r.cache_creation_tokens for r in results)
+    uncached = input_tokens - cache_read - cache_creation
+    
+    cost_usd = (uncached * settings.llm_input_price
+            + cache_read * settings.llm_cache_read_price
+            + cache_creation * settings.llm_cache_write_price
+            + output_tokens * settings.llm_output_price) / 1_000_000
+    
     return AnswerRunSummary(
         run_id=f"{now:%Y%m%d-%H%M%S}_answers",
         created_at=now.isoformat(timespec="seconds"),
@@ -130,9 +180,11 @@ def summarize(results: list[AnswerResult], settings: Settings, pipeline: Answere
         llm_model=settings.llm_model,
         llm_effort=settings.llm_effort,
         embedding_model=settings.embedding_model,
-        cost_usd= (input_tokens * settings.llm_input_price + output_tokens * settings.llm_output_price) / 1_000_000,
+        cost_usd= cost_usd,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
+        cache_read_tokens=cache_read,
+        cache_creation_tokens=cache_creation,
         k=pipeline.k,
         n_in=len(in_scope),
         n_off=len(off_scope),
@@ -142,6 +194,10 @@ def summarize(results: list[AnswerResult], settings: Settings, pipeline: Answere
         citation_rate_when_retrieved=citation_rate_when_retrieved(in_scope),
         retrieval_hit_rate=sum(r.retrieval_hit for r in in_scope) / len(in_scope),
         abstention_rate=abstention_rate(off_scope),
+        tool_selection_accuracy=tool_selection_accuracy(results),
+        mean_tool_calls=mean_tool_calls(results),
+        reasons_in=reasons(in_scope),
+        reasons_off=reasons(off_scope),
         wrong_citations=[r.id for r in in_scope if r.retrieval_hit and not r.citation_hit],
         wrong_answers_off=[r.id for r in off_scope if r.found],
         runner=pipeline.runner,
@@ -154,17 +210,20 @@ if __name__ == "__main__":
     make_langfuse(settings)
     
     retriever = Retriever(make_client(settings), EmbedderModel(settings), settings.index_name, Reranker(settings))
-    provider = AnthropicProvider(settings)
-    
+    #provider = AnthropicProvider(settings)
+    provider = ChatAnthropicProvider(settings)
     methods = search_methods(retriever, settings)
     
     ragPipeline = RagPipeline(methods[settings.retrieval_method], settings.retrieval_method, provider)
     
-    agent = RagAgent(methods[settings.retrieval_method], settings.retrieval_method, provider)
-    ragPipeline = RagGraph(agent, settings)
+    #agent = RagAgent(methods[settings.retrieval_method], settings.retrieval_method, provider)
+    agent = ToolAgent(provider.model, methods[settings.retrieval_method], settings.retrieval_method)
+    #ragPipeline = RagGraph(agent, settings)
+    ragPipeline = AgentGraph(agent)
     
-    questions = load_questions(Path("data/eval/questions.jsonl"))
-    
+    questions = [q for q in load_questions(Path("data/eval/questions.jsonl")) if q.task == "norma"]
+    #questions = [q for q in load_questions(Path("data/eval/questions.jsonl")) if q.id in {9, 33, 34, 38, 44}]
+
     now = datetime.now(timezone.utc)
     
     results = evaluate(pipeline=ragPipeline, questions=questions, now=now)

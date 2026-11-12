@@ -25,3 +25,4 @@ class ToolAgentState(TypedDict, total=False):
     question: str
     messages: Annotated[list[AnyMessage], add_messages]
     response: RagResponse
+    forced: bool

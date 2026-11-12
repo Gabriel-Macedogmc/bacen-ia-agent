@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     anthropic_key: str
     llm_input_price: float = 0.10    # US$ por milhão de tokens (Haiku 5.5)
     llm_output_price: float = 0.50
+    llm_cache_read_price: float = 0.01     # 0,1x a entrada
+    llm_cache_write_price: float = 0.125   # 1,25x a entrada (cache de 5 minutos)
     
     #Cross-Enconder
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
