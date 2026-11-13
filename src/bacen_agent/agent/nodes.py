@@ -4,7 +4,7 @@ from langfuse import observe
 from pydantic import ValidationError
 
 from bacen_agent.agent.state import AgentState, ToolAgentState
-from bacen_agent.agent.tools import make_buscar_normas
+from bacen_agent.agent.tools import calcular, make_buscar_normas, make_consultar_conta
 from bacen_agent.llm.provider import LLMProvider, LLMUsage
 from bacen_agent.rag.pipeline import RagResponse
 from bacen_agent.rag.prompts import AGENT_PROMPT, SYSTEM_PROMPT, SYSTEM_REWRITE_PROMPT, build_rewrite_message, build_user_message
@@ -76,9 +76,9 @@ class RagAgent:
         }
         
 LIMIT_REMINDER = (
-    "Limite de buscas atingido; esta chamada não foi executada. "
-    "Não chame mais buscar_normas. Encerre agora chamando a ferramenta Answer "
-    "usando apenas os trechos já recebidos. Se eles não respondem à pergunta, use found=false."
+    "Limite de chamadas de ferramentas atingido; esta chamada não foi executada. "
+    "Não chame outras ferramentas. Encerre agora chamando Answer usando apenas o que já recebeu. "
+    "Se isso não responde à pergunta, use found=false."
 )
 TEXT_REMINDER = (
     "Sua resposta não foi registrada porque veio em texto. "
@@ -86,10 +86,12 @@ TEXT_REMINDER = (
 )
 
 class ToolAgent:
-    def __init__(self, llm: BaseChatModel, search: SearchFn, retrieval_method: str, k: int = 5, max_iterations: int = 4):
+    def __init__(self, llm: BaseChatModel, search: SearchFn, retrieval_method: str, k: int = 5, max_iterations: int = 6, conta: dict = {}):
         self.buscar = make_buscar_normas(search, k)
-        self.llm = llm.bind_tools([self.buscar, Answer])
-        self.tools = [self.buscar]
+        self.consultar = make_consultar_conta(conta)
+        
+        self.tools = [self.buscar, calcular, self.consultar]
+        self.llm = llm.bind_tools([*self.tools, Answer])
         self.retrieval_method = retrieval_method
         self.k = k
         self.max_iterations = max_iterations
@@ -151,9 +153,14 @@ class ToolAgent:
         if not answer.found:
             return {"response": RagResponse.not_found(chunks, usage, attempts=len(queries), query=queries, tools_called=tools_called, reason="abstained")}
                 
-        if not answer.citations or not set(answer.citations) <= valid_ids:
+        uses_data = bool({"consultar_conta", "calcular"} & set(tools_called))
+        
+        if not set(answer.citations) <= valid_ids:
             return {"response": RagResponse.not_found(chunks, usage, attempts=len(queries), query=queries, tools_called=tools_called, reason="invalid_citation")}
 
+        if not answer.citations and not uses_data:
+            return {"response": RagResponse.not_found(chunks, usage, attempts=len(queries), query=queries, tools_called=tools_called, reason="invalid_citation")}
+        
         citations = list(dict.fromkeys(answer.citations))
 
         return {"response": RagResponse(

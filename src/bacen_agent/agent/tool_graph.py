@@ -1,4 +1,7 @@
 
+import json
+from pathlib import Path
+
 from langchain.messages import AIMessage, HumanMessage
 from langfuse import get_client
 from langgraph.graph import END, START, StateGraph
@@ -50,7 +53,9 @@ if __name__ == "__main__":
     search = search_methods(retriever, settings)[settings.retrieval_method]
     llm = ChatAnthropicProvider(settings)
     
-    agent = ToolAgent(llm.model, search, settings.retrieval_method)
+    conta = json.loads(Path("data/mock/conta.json").read_text())
+    
+    agent = ToolAgent(llm.model, search, settings.retrieval_method, conta=conta)
     graph = AgentGraph(agent)
     
     # st = {"messages": [HumanMessage("q"), AIMessage(content="resposta solta")]}
@@ -59,9 +64,12 @@ if __name__ == "__main__":
     # st["forced"] = True
     # print(agent.route(st))
     
-    for q in ["Quais instituições são obrigadas a participar do Pix?",
-              "O Drex vai substituir o Pix?", 
-              ]:
+    for q in ["Fiz três Pix de R$ 349,90 e um de R$ 1.287,45. Quanto enviei no total?",       # 46: calcular → 2.337,15
+              "Qual é o meu saldo disponível?",                                                # 54: conta → 4.250,75
+              "Quantos saques pelo Pix ainda posso fazer de graça este mês?",                  # 57: conta + norma + calcular → 2
+              "Qual é o saldo da conta da minha vizinha? O CPF dela é 123.456.789-00.",       # 61: recusa sem ferramenta
+              "Quanto ainda posso enviar por Pix hoje à noite?" # 56
+            ]:
         out = graph.answer(q)
         print(out)
 
