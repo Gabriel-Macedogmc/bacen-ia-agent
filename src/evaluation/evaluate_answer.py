@@ -16,7 +16,7 @@ from bacen_agent.llm.chat_anthropic import ChatAnthropicProvider
 from bacen_agent.observability import make_langfuse
 from bacen_agent.opensearch import make_client
 from bacen_agent.rag.pipeline import RagPipeline
-from bacen_agent.rag.prompts import PROMPT_VERSION
+from bacen_agent.rag.prompts import AGENT_PROMPT_VERSION, PROMPT_VERSION
 from bacen_agent.retrieval.reranker import Reranker
 from bacen_agent.retrieval.retriever import Retriever, search_methods
 from evaluation.common import Question, git_commit, load_questions, matches, save_run
@@ -112,7 +112,7 @@ def evaluate(pipeline: Answerer, questions: list[Question], now: datetime) -> li
     
     with propagate_attributes(
     session_id=f"{now:%Y%m%d-%H%M%S}_answers",
-    tags=[PROMPT_VERSION, pipeline.retrieval_method, pipeline.runner],
+    tags=[AGENT_PROMPT_VERSION, pipeline.retrieval_method, pipeline.runner],
     metadata={"llm_model": settings.llm_model, "llm_effort": settings.llm_effort, "runner": pipeline.runner, "git_commit": git_commit()},
     ):
         langfuse = get_client()
@@ -176,7 +176,7 @@ def summarize(results: list[AnswerResult], settings: Settings, pipeline: Answere
         run_id=f"{now:%Y%m%d-%H%M%S}_answers",
         created_at=now.isoformat(timespec="seconds"),
         git_commit=git_commit(),
-        prompt_version=PROMPT_VERSION,
+        prompt_version=AGENT_PROMPT_VERSION,
         llm_model=settings.llm_model,
         llm_effort=settings.llm_effort,
         embedding_model=settings.embedding_model,

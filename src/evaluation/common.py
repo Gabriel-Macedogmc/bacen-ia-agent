@@ -31,6 +31,7 @@ class Question(BaseModel):
     task: str
     optional_tools: list[str] = []
     expected_args: dict[str, dict[str, str]] = {}
+    forbidden: list[str] = []
 
 def git_commit() -> str:
     try:
